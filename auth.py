@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, Request
 from database import supabase
-
+import traceback
 # 依赖项：获取当前登录用户（用于需要登录的接口）
 async def get_current_user(request: Request):
     auth = request.headers.get("Authorization")
@@ -8,10 +8,17 @@ async def get_current_user(request: Request):
         raise HTTPException(status_code=401, detail="未提供令牌")
     token = auth.split(" ")[1]
     try:
-        user = supabase.auth.get_user(token)
-        return user.user  # 返回用户对象
-    except Exception:
-        raise HTTPException(status_code=401, detail="无效令牌")
+        # 强制打印 token 前10位，确认是否正确传递
+        print(f"Received token (first 10 chars): {token[:10]}...")
+        user_response = supabase.auth.get_user(token)
+        print("Supabase get_user success")
+        return user_response.user
+    except Exception as e:
+        # 打印完整堆栈
+        print("Supabase get_user failed:")
+        traceback.print_exc()
+        # 把真实错误信息临时返回给客户端，方便调试（上线后删除）
+        raise HTTPException(status_code=401, detail=f"无效令牌: {str(e)}")
 
 async def check_usage(user=Depends(get_current_user)):
     # 获取 profile

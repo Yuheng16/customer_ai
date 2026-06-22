@@ -5,7 +5,47 @@ from database import supabase
 from auth import get_current_user, check_usage
 from pydantic import BaseModel
 from datetime import datetime, timedelta
+import secrets, string
+
 app = FastAPI(title="电商AI客服助手")
+
+def generate_activation_code(length=16):
+    """生成随机激活码"""
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(secrets.choice(chars) for _ in range(length))
+
+@app.post("/api/payment/mbd-webhook")
+async def mbd_webhook(request: Request):
+    """接收面包多支付成功通知"""
+    # 验证签名（面包多官方文档提供验证方法）
+    payload = await request.json()
+    # 这里简化示例：实际应验证 sign 字段，防止伪造请求
+    # 参考面包多文档：https://mbd.pub/docs/api/order/notify
+
+    order_id = payload.get("order_id")
+    product_id = payload.get("product_id")
+    buyer_email = payload.get("buyer_email")  # 注意面包多可能不提供邮箱，需自行处理
+
+    # 根据 product_id 判断购买的是什么套餐（可事先在数据库配置）
+    tier_map = {
+        "商品ID_pro": "pro",
+        "商品ID_premium": "premium",
+    }
+    tier = tier_map.get(product_id, "pro")
+    duration_days = 30  # 月卡
+
+    # 在 activation_codes 表中插入一个未使用的激活码
+    code = generate_activation_code()
+    supabase.table("activation_codes").insert({
+        "code": code,
+        "tier": tier,
+        "duration_days": duration_days
+    }).execute()
+
+    # TODO: 可将激活码通过邮件发送给买家（需要配置邮件服务）
+    # 最简单的做法：在官网上提供一个“查询订单激活码”页面，输入订单号即可显示
+
+    return {"status": "ok", "code": code if buyer_email else "please check order page"}
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
 async def analyze(
