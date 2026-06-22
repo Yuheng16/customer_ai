@@ -130,7 +130,7 @@ ujson==5.13.0
 undefined==0.0.8
 urllib3==2.2.2
 uvicorn==0.30.1
-vboxapi==1.0
+#vboxapi==1.0
 watchfiles==1.2.0
 wcwidth==0.2.13
 websocket-client==1.8.0
