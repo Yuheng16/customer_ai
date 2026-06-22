@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends,HTTPException
+from fastapi import FastAPI, Depends,HTTPException,Request
 from models import AnalyzeRequest, AnalyzeResponse
 from service import analyze_order
 from database import supabase
