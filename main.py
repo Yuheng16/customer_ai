@@ -105,8 +105,7 @@ async def analyze(
 
     # 记录本次调用
     supabase.table("user_usage").insert({
-        "user_id": usage["user_id"],
-        "scenario": req.scenario or "general"
+        "user_id": usage["user_id"]
     }).execute()
 
     return AnalyzeResponse(
