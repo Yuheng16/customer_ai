@@ -48,18 +48,13 @@ async def mbd_webhook(request: Request):
     return {"status": "ok", "code": code if buyer_email else "please check order page"}
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
-async def analyze(
-    req: AnalyzeRequest,
-    user=Depends(get_current_user),
-    usage=Depends(check_usage)
-):
+async def analyze(req: AnalyzeRequest, user=Depends(get_current_user), usage=Depends(check_usage)):
     # 调用 AI 分析
     result = await analyze_order(req.order_text, req.image_urls)
-    
-    # 调用成功后，递增调用次数
-    new_count = usage["api_calls"] + 1
-    supabase.table("user_usage").update({"api_calls": new_count}).eq("user_id", user.id).execute()
-    
+
+    # 记录本次调用（插入一条新行到 user_usage 表）
+    supabase.table("user_usage").insert({"user_id": usage["user_id"]}).execute()
+
     return AnalyzeResponse(analysis=result["analysis"], suggested_reply=result["suggested_reply"])
 
 class RedeemRequest(BaseModel):

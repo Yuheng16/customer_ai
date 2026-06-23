@@ -23,28 +23,58 @@ async def get_current_user(request: Request):
         raise HTTPException(status_code=401, detail=f"无效令牌: {str(e)}")
 
 async def check_usage(user=Depends(get_current_user)):
-    # 获取 profile
+    # 1. 查询 profiles 表获取订阅等级
     profile_res = supabase.table("profiles").select("*").eq("id", user.id).execute()
     if not profile_res.data:
-        # 理论上新建用户会自动创建 profile，这里兜底
+        # 如果没有 profile，创建一个（兜底）
         supabase.table("profiles").insert({"id": user.id}).execute()
-        profile = {"subscription_tier": "free", "subscription_expiry": None}
+        tier = "free"
+        expiry = None
     else:
         profile = profile_res.data[0]
-    
-    # 检查订阅是否过期
-    if profile["subscription_expiry"]:
-        expiry = datetime.fromisoformat(profile["subscription_expiry"].replace("Z","+00:00"))
+        tier = profile.get("subscription_tier", "free")
+        expiry = profile.get("subscription_expiry")
+
+    # 2. 检查订阅是否过期
+    if expiry:
+        if isinstance(expiry, str):
+            expiry = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
         if expiry < datetime.now(timezone.utc):
-            # 过期降级为 free
-            supabase.table("profiles").update({"subscription_tier": "free", "subscription_expiry": None}).eq("id", user.id).execute()
-            profile["subscription_tier"] = "free"
-    
-    tier = profile["subscription_tier"]
-    # 定义限制：free每日10次，pro每日100次，premium不限
-    limits = {"free": 10, "pro": 100, "premium": float("inf")}
+            # 降级为 free
+            supabase.table("profiles").update({
+                "subscription_tier": "free",
+                "subscription_expiry": None
+            }).eq("id", user.id).execute()
+            tier = "free"
+
+    # 3. 设置不同等级的限制
+    limits = {
+        "free": 10,
+        "pro": 100,
+        "premium": 99999
+    }
     daily_limit = limits.get(tier, 10)
-    
-    # 获取今日调用次数（可新建 daily_usage 表，这里简化为从 user_usage 读取当日计数，需要额外逻辑）
-    # 暂时略，可后期实现。先只做简单返回 tier。
-    return {"tier": tier, "limit": daily_limit}
+
+    # 4. 统计今日已用次数（从 user_usage 表按行数计算）
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    usage_res = supabase.table("user_usage") \
+        .select("*", count="exact") \
+        .eq("user_id", user.id) \
+        .gte("created_at", today_start) \
+        .execute()
+    today_calls = usage_res.count if usage_res.count else 0
+
+    # 5. 检查是否超限
+    if today_calls >= daily_limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"今日调用次数已达上限（{tier}套餐每日 {daily_limit} 次），请升级套餐或明日再试"
+        )
+
+    # 6. 返回信息给后续路由使用
+    return {
+        "tier": tier,
+        "limit": daily_limit,
+        "today_used": today_calls,
+        "user_id": user.id
+    }
