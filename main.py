@@ -111,6 +111,8 @@ async def analyze(
     return AnalyzeResponse(
         buyer_intent=result.get("buyer_intent", ""),
         buyer_emotion=result.get("buyer_emotion", ""),
+        product_highlight=result.get("product_highlight", ""),
+        practical_point=result.get("practical_point", ""),
         solution=result.get("solution", ""),
         reply_options=[ReplyOption(**opt) for opt in result.get("reply_options", [])]
     )

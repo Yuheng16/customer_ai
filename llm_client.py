@@ -102,14 +102,18 @@ def parse_ai_response(raw_text: str) -> dict:
         return {
             "buyer_intent": parsed.get("buyer_intent", ""),
             "buyer_emotion": parsed.get("buyer_emotion", ""),
+            "product_highlight": parsed.get("product_highlight", ""),
+            "practical_point": parsed.get("practical_point", ""),
             "solution": parsed.get("solution", ""),
             "reply_options": reply_options
         }
 
-    # 4. 兜底：AI 没返回 JSON，把整段作为一条话术
+    # 4. 兜底
     return {
         "buyer_intent": "",
         "buyer_emotion": "",
+        "product_highlight": "",
+        "practical_point": "",
         "solution": "",
         "reply_options": [{"style": "通用回复", "text": raw_text.strip()}]
     }
