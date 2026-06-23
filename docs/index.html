@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>电商AI客服助手 — 智能分析买家意图，秒级生成回复话术</title>
+  <meta name="description" content="专为淘宝/天猫客服打造的AI助手，自动抓取千牛聊天记录与图片，智能分析买家意图，一键生成高质量回复话术。">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eef2ff', 100: '#e0e7ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html { scroll-behavior: smooth; }
+    .gradient-text {
+      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ====== 支付弹窗 ====== */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.55);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+      animation: fadeIn 0.2s ease-out;
+    }
+    .modal-overlay.hidden { display: none; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    .modal {
+      background: #fff; border-radius: 20px; width: 100%; max-width: 480px;
+      max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      animation: slideUp 0.3s ease-out;
+    }
+    .modal::-webkit-scrollbar { width: 4px; }
+    .modal::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+
+    .modal-header {
+      padding: 24px 28px 0; display: flex; justify-content: space-between; align-items: start;
+    }
+    .modal-header h3 { font-size: 20px; font-weight: 800; color: #1f2937; }
+    .modal-header .plan-badge {
+      font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
+      background: #eef2ff; color: #4f46e5;
+    }
+    .modal-close {
+      width: 32px; height: 32px; border-radius: 50%; border: none; background: #f3f4f6;
+      font-size: 18px; cursor: pointer; color: #6b7280; display: flex; align-items: center;
+      justify-content: center; transition: background 0.15s;
+    }
+    .modal-close:hover { background: #e5e7eb; }
+
+    .modal-body { padding: 20px 28px 28px; }
+
+    /* 支付方式标签 */
+    .pay-tabs { display: flex; gap: 0; margin-bottom: 16px; border-radius: 12px; overflow: hidden; border: 2px solid #e5e7eb; }
+    .pay-tab {
+      flex: 1; padding: 10px; text-align: center; font-size: 14px; font-weight: 600;
+      cursor: pointer; background: #f9fafb; color: #6b7280; border: none;
+      transition: all 0.15s;
+    }
+    .pay-tab:first-child { border-right: 2px solid #e5e7eb; }
+    .pay-tab.active { background: #4f46e5; color: #fff; }
+
+    /* QR 码容器 */
+    .qr-container { text-align: center; padding: 16px; background: #f9fafb; border-radius: 14px; border: 2px dashed #e5e7eb; }
+    .qr-container img { max-width: 220px; border-radius: 10px; border: 1px solid #e5e7eb; }
+    .qr-hint { margin-top: 10px; font-size: 13px; color: #6b7280; }
+    .qr-hint .amount { font-weight: 700; color: #dc2626; font-size: 18px; }
+
+    /* 分割线 */
+    .divider {
+      display: flex; align-items: center; gap: 12px; margin: 20px 0; color: #9ca3af; font-size: 12px;
+    }
+    .divider::before, .divider::after { content: ''; flex: 1; border-top: 1px solid #e5e7eb; }
+
+    /* 表单 */
+    .pay-form { display: flex; flex-direction: column; gap: 12px; }
+    .pay-form label { font-size: 13px; font-weight: 600; color: #374151; }
+    .pay-form input, .pay-form select {
+      width: 100%; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 14px;
+      font-size: 14px; outline: none; transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    .pay-form input:focus, .pay-form select:focus { border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+
+    .screenshot-upload {
+      border: 2px dashed #d1d5db; border-radius: 10px; padding: 16px; text-align: center;
+      cursor: pointer; transition: all 0.15s; color: #9ca3af; font-size: 13px;
+    }
+    .screenshot-upload:hover { border-color: #818cf8; background: #f5f3ff; }
+    .screenshot-upload.has-image { border-color: #a5b4fc; background: #eef2ff; border-style: solid; padding: 8px; }
+    .screenshot-upload img { max-height: 120px; border-radius: 6px; }
+
+    .btn-submit {
+      width: 100%; background: #4f46e5; color: #fff; border: none; padding: 12px;
+      border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer;
+      transition: background 0.15s; margin-top: 4px;
+    }
+    .btn-submit:hover { background: #4338ca; }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .submit-status { font-size: 13px; text-align: center; margin-top: 8px; display: none; }
+    .submit-status.success { color: #16a34a; display: block; }
+    .submit-status.error { color: #dc2626; display: block; }
+    .submit-status.loading { color: #92400e; display: block; }
+  </style>
+</head>
+<body class="bg-white text-gray-800 font-sans">
+
+<!-- ====== 导航栏 ====== -->
+<nav class="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-gray-100">
+  <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+    <span class="text-xl font-bold text-brand-600">🤖 电商AI客服助手</span>
+    <div class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
+      <a href="#features" class="hover:text-brand-600 transition">功能</a>
+      <a href="#how-it-works" class="hover:text-brand-600 transition">使用流程</a>
+      <a href="#pricing" class="hover:text-brand-600 transition">套餐</a>
+      <a href="#activate" class="hover:text-brand-600 transition">激活码</a>
+      <a href="#faq" class="hover:text-brand-600 transition">常见问题</a>
+    </div>
+    <a href="https://chromewebstore.google.com" target="_blank" class="hidden md:inline-flex bg-brand-600 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700 transition">
+      安装插件
+    </a>
+  </div>
+</nav>
+
+<!-- ====== Hero ====== -->
+<header class="max-w-6xl mx-auto px-4 pt-20 pb-16 md:pt-28 md:pb-24 text-center">
+  <div class="inline-flex items-center gap-2 bg-brand-50 text-brand-700 text-sm font-medium px-4 py-1.5 rounded-full mb-6">
+    🚀 专为淘宝/天猫客服打造 · 千牛插件即装即用
+  </div>
+  <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight text-gray-900 leading-tight">
+    用 AI 把客服效率<br><span class="gradient-text">提升 10 倍</span>
+  </h1>
+  <p class="mt-6 text-lg md:text-xl text-gray-500 max-w-2xl mx-auto leading-relaxed">
+    自动抓取千牛聊天记录与买家订单，AI 秒级分析购买意图，<br class="hidden md:block">生成专业回复话术。让每个客服都像销冠。
+  </p>
+  <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+    <a href="https://chromewebstore.google.com" target="_blank" class="w-full sm:w-auto bg-brand-600 text-white px-8 py-3.5 rounded-xl text-lg font-semibold hover:bg-brand-700 shadow-lg shadow-brand-200 transition">
+      ⬇ 免费安装浏览器插件
+    </a>
+    <a href="#pricing" class="w-full sm:w-auto border border-gray-200 text-gray-700 px-8 py-3.5 rounded-xl text-lg font-semibold hover:border-brand-300 hover:text-brand-600 transition">
+      查看套餐
+    </a>
+  </div>
+  <!-- 演示截图占位 -->
+  <div class="mt-16 bg-gray-100 rounded-2xl overflow-hidden shadow-lg border border-gray-200">
+    <div class="aspect-[16/9] bg-gradient-to-br from-gray-200 to-gray-100 flex items-center justify-center text-gray-400">
+      <div class="text-center">
+        <svg class="w-16 h-16 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+        <p class="text-sm">📸 插件演示截图（替换为实际截图）</p>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ====== 功能特点 ====== -->
+<section id="features" class="bg-gray-50 py-20 md:py-28">
+  <div class="max-w-6xl mx-auto px-4">
+    <div class="text-center mb-16">
+      <span class="text-brand-600 font-semibold text-sm tracking-wide uppercase">核心功能</span>
+      <h2 class="mt-3 text-3xl md:text-4xl font-bold text-gray-900">一个插件，搞定千牛回复</h2>
+      <p class="mt-4 text-gray-500 max-w-xl mx-auto">无需切换窗口，在千牛页面内即可完成 AI 分析。</p>
+    </div>
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+
+      <!-- 功能 1 -->
+      <div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-md transition">
+        <div class="w-12 h-12 bg-brand-50 rounded-xl flex items-center justify-center text-2xl mb-5">💬</div>
+        <h3 class="text-lg font-bold text-gray-900 mb-2">一键抓取聊天内容</h3>
+        <p class="text-gray-500 text-sm leading-relaxed">在千牛聊天页面点击插件，自动提取当前买家的聊天记录、订单备注和商品信息。</p>
+      </div>
+
+      <!-- 功能 2 -->
+      <div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-md transition">
+        <div class="w-12 h-12 bg-brand-50 rounded-xl flex items-center justify-center text-2xl mb-5">🧠</div>
+        <h3 class="text-lg font-bold text-gray-900 mb-2">AI 意图识别与话术生成</h3>
+        <p class="text-gray-500 text-sm leading-relaxed">大模型深度分析买家意图（犹豫/比价/售后/催单），自动生成符合场景的专业回复话术。</p>
+      </div>
+
+      <!-- 功能 3 -->
+      <div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-md transition">
+        <div class="w-12 h-12 bg-brand-50 rounded-xl flex items-center justify-center text-2xl mb-5">🖼️</div>
+        <h3 class="text-lg font-bold text-gray-900 mb-2">图片智能识别</h3>
+        <p class="text-gray-500 text-sm leading-relaxed">支持抓取聊天中的图片，AI 可识别买家发送的截图内容，辅助判断售后问题。</p>
+      </div>
+
+      <!-- 功能 4 -->
+      <div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-md transition">
+        <div class="w-12 h-12 bg-brand-50 rounded-xl flex items-center justify-center text-2xl mb-5">⚡</div>
+        <h3 class="text-lg font-bold text-gray-900 mb-2">秒级响应</h3>
+        <p class="text-gray-500 text-sm leading-relaxed">从抓取到生成话术，全程 2-5 秒。比手动打字快 10 倍，告别重复劳动。</p>
+      </div>
+
+      <!-- 功能 5 -->
+      <div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-md transition">
+        <div class="w-12 h-12 bg-brand-50 rounded-xl flex items-center justify-center text-2xl mb-5">✏️</div>
+        <h3 class="text-lg font-bold text-gray-900 mb-2">手动输入分析</h3>
+        <p class="text-gray-500 text-sm leading-relaxed">也支持手动粘贴聊天文本，AI 同样为你生成回复建议。不挑场景，灵活使用。</p>
+      </div>
+
+      <!-- 功能 6 -->
+      <div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-md transition">
+        <div class="w-12 h-12 bg-brand-50 rounded-xl flex items-center justify-center text-2xl mb-5">🔐</div>
+        <h3 class="text-lg font-bold text-gray-900 mb-2">安全登录 & 用量管理</h3>
+        <p class="text-gray-500 text-sm leading-relaxed">基于 Supabase Auth 的邮箱注册/登录，自动统计每日调用次数，放心使用。</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ====== 使用流程 ====== -->
+<section id="how-it-works" class="py-20 md:py-28">
+  <div class="max-w-6xl mx-auto px-4">
+    <div class="text-center mb-16">
+      <span class="text-brand-600 font-semibold text-sm tracking-wide uppercase">三步开始</span>
+      <h2 class="mt-3 text-3xl md:text-4xl font-bold text-gray-900">上手简单，即刻提效</h2>
+    </div>
+    <div class="grid md:grid-cols-3 gap-8">
+      <div class="text-center">
+        <div class="w-16 h-16 bg-brand-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-5">1</div>
+        <h3 class="text-lg font-bold mb-2">安装浏览器插件</h3>
+        <p class="text-gray-500 text-sm leading-relaxed">Chrome 应用商店一键安装，无需复杂配置。支持 Chrome / Edge 等 Chromium 内核浏览器。</p>
+      </div>
+      <div class="text-center">
+        <div class="w-16 h-16 bg-brand-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-5">2</div>
+        <h3 class="text-lg font-bold mb-2">注册并登录账号</h3>
+        <p class="text-gray-500 text-sm leading-relaxed">插件内使用邮箱注册，免费版每日 10 次试用，满意后购买套餐升级。</p>
+      </div>
+      <div class="text-center">
+        <div class="w-16 h-16 bg-brand-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-5">3</div>
+        <h3 class="text-lg font-bold mb-2">点击分析，获取话术</h3>
+        <p class="text-gray-500 text-sm leading-relaxed">打开千牛聊天页面，点一下插件按钮，AI 即返回分析结果和推荐回复。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====== 套餐定价 ====== -->
+<section id="pricing" class="bg-gray-50 py-20 md:py-28">
+  <div class="max-w-5xl mx-auto px-4">
+    <div class="text-center mb-16">
+      <span class="text-brand-600 font-semibold text-sm tracking-wide uppercase">套餐价格</span>
+      <h2 class="mt-3 text-3xl md:text-4xl font-bold text-gray-900">选择适合你的方案</h2>
+      <p class="mt-4 text-gray-500">支付后自动获取激活码，在插件内兑换即可升级。</p>
+    </div>
+    <div class="grid md:grid-cols-3 gap-8">
+
+      <!-- 免费版 -->
+      <div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-200 text-center flex flex-col">
+        <h3 class="text-xl font-bold text-gray-800">🆓 免费版</h3>
+        <p class="mt-2 text-gray-500 text-sm">适合轻度试用</p>
+        <p class="mt-6 text-5xl font-extrabold text-gray-900">¥0</p>
+        <p class="mt-2 text-gray-400 text-sm">永久免费</p>
+        <ul class="mt-8 space-y-3 text-sm text-gray-600 text-left flex-1">
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 每日 10 次 AI 分析</li>
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 千牛聊天抓取</li>
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 图片识别</li>
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 基础话术建议</li>
+        </ul>
+        <div class="mt-8 bg-gray-100 text-gray-500 py-3 rounded-xl text-sm font-semibold cursor-default">注册即用</div>
+      </div>
+
+      <!-- Pro版 -->
+      <div class="bg-white rounded-2xl p-8 shadow-lg border-2 border-brand-500 text-center flex flex-col relative">
+        <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-brand-600 text-white text-xs font-bold px-4 py-1 rounded-full">🔥 推荐</div>
+        <h3 class="text-xl font-bold text-gray-800">⭐ Pro 版</h3>
+        <p class="mt-2 text-gray-500 text-sm">适合活跃客服</p>
+        <p class="mt-6 text-5xl font-extrabold text-gray-900">¥29.9<span class="text-lg font-normal text-gray-400">/月</span></p>
+        <p class="mt-2 text-gray-400 text-sm">每天不到 ¥1</p>
+        <ul class="mt-8 space-y-3 text-sm text-gray-600 text-left flex-1">
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 每日 100 次 AI 分析</li>
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 全部免费版功能</li>
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 高级话术生成</li>
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 优先响应速度</li>
+        </ul>
+        <button onclick="openPaymentModal('pro', 'Pro 版', 29.9)" class="mt-8 block w-full bg-brand-600 text-white py-3 rounded-xl text-sm font-semibold hover:bg-brand-700 transition shadow-md">
+          立即购买
+        </button>
+      </div>
+
+      <!-- 高级版 -->
+      <div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-200 text-center flex flex-col">
+        <h3 class="text-xl font-bold text-gray-800">👑 高级版</h3>
+        <p class="mt-2 text-gray-500 text-sm">适合团队/重度用户</p>
+        <p class="mt-6 text-5xl font-extrabold text-gray-900">¥59.9<span class="text-lg font-normal text-gray-400">/月</span></p>
+        <p class="mt-2 text-gray-400 text-sm">无限调用</p>
+        <ul class="mt-8 space-y-3 text-sm text-gray-600 text-left flex-1">
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 不限次数 AI 分析</li>
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 全部 Pro 功能</li>
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 批量处理支持</li>
+          <li class="flex items-start gap-2"><span class="text-green-500 mt-0.5">✓</span> 专属话术定制</li>
+        </ul>
+        <button onclick="openPaymentModal('premium', '高级版', 59.9)" class="mt-8 block w-full bg-brand-600 text-white py-3 rounded-xl text-sm font-semibold hover:bg-brand-700 transition shadow-md">
+          立即购买
+        </button>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ====== 激活码使用说明 ====== -->
+<section id="activate" class="py-20 md:py-28">
+  <div class="max-w-4xl mx-auto px-4">
+    <div class="text-center mb-16">
+      <span class="text-brand-600 font-semibold text-sm tracking-wide uppercase">激活指南</span>
+      <h2 class="mt-3 text-3xl md:text-4xl font-bold text-gray-900">购买后如何兑换？</h2>
+      <p class="mt-4 text-gray-500">扫码支付并提交验证信息后，激活码将发送到你的邮箱。</p>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <!-- 步骤 -->
+      <div class="p-8 md:p-10 space-y-8">
+
+        <div class="flex gap-5">
+          <div class="flex-shrink-0 w-10 h-10 bg-brand-600 text-white rounded-full flex items-center justify-center font-bold text-sm">1</div>
+          <div>
+            <h4 class="text-lg font-bold text-gray-900">选择套餐并扫码支付</h4>
+            <p class="mt-1 text-gray-500 text-sm leading-relaxed">
+              在<a href="#pricing" class="text-brand-600 underline">套餐页面</a>点击 <strong>"立即购买"</strong>，选择支付宝或微信支付，扫描弹出的收款码完成转账。
+              请<strong>务必保留转账单号</strong>（在支付App账单详情中查看）。
+            </p>
+          </div>
+        </div>
+
+        <div class="flex gap-5">
+          <div class="flex-shrink-0 w-10 h-10 bg-brand-600 text-white rounded-full flex items-center justify-center font-bold text-sm">2</div>
+          <div>
+            <h4 class="text-lg font-bold text-gray-900">提交支付验证信息</h4>
+            <p class="mt-1 text-gray-500 text-sm leading-relaxed">
+              支付成功后，在弹窗中填写你的<strong>邮箱</strong>和<strong>转账单号</strong>，可选择性上传支付截图。
+              点击"提交支付验证"，我们将在 24 小时内完成审核。
+            </p>
+          </div>
+        </div>
+
+        <div class="flex gap-5">
+          <div class="flex-shrink-0 w-10 h-10 bg-brand-600 text-white rounded-full flex items-center justify-center font-bold text-sm">3</div>
+          <div>
+            <h4 class="text-lg font-bold text-gray-900">查收激活码邮件</h4>
+            <p class="mt-1 text-gray-500 text-sm leading-relaxed">
+              审核通过后，<strong>激活码将发送到你填写的邮箱</strong>。请留意收件箱（及垃圾邮件箱）。
+              也可在本页面下方查询激活码状态。
+            </p>
+            <!-- 激活码查询入口 -->
+            <div class="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+              <p class="text-sm text-amber-800 font-medium mb-3">🔑 查询激活码（输入邮箱或转账单号）：</p>
+              <div class="flex gap-2">
+                <input id="orderIdInput" type="text" placeholder="输入邮箱或转账单号" class="flex-1 border border-amber-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <button onclick="lookupCode()" class="bg-amber-600 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-amber-700 transition whitespace-nowrap">查询</button>
+              </div>
+              <p id="lookupResult" class="mt-3 text-sm hidden"></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-5">
+          <div class="flex-shrink-0 w-10 h-10 bg-brand-600 text-white rounded-full flex items-center justify-center font-bold text-sm">4</div>
+          <div>
+            <h4 class="text-lg font-bold text-gray-900">在插件内兑换</h4>
+            <p class="mt-1 text-gray-500 text-sm leading-relaxed">
+              打开浏览器插件 → 进入设置/兑换页面 → 输入激活码 → 点击<strong>"兑换"</strong>。
+              系统自动升级你的套餐等级并延长有效期，即刻生效。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 提示 -->
+      <div class="bg-brand-50 border-t border-brand-100 p-6 text-sm text-brand-800">
+        <strong>💡 提示：</strong>激活码不可重复使用，每个激活码仅限一个账号兑换。如遇问题请通过插件内的反馈入口联系我们。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====== 常见问题 ====== -->
+<section id="faq" class="bg-gray-50 py-20 md:py-28">
+  <div class="max-w-3xl mx-auto px-4">
+    <div class="text-center mb-16">
+      <span class="text-brand-600 font-semibold text-sm tracking-wide uppercase">常见问题</span>
+      <h2 class="mt-3 text-3xl md:text-4xl font-bold text-gray-900">还有疑问？</h2>
+    </div>
+    <div class="space-y-4">
+
+      <details class="bg-white rounded-xl border border-gray-200 p-6 group">
+        <summary class="font-semibold text-gray-800 cursor-pointer list-none flex justify-between items-center">
+          插件支持哪些浏览器？
+          <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+        </summary>
+        <p class="mt-4 text-gray-500 text-sm leading-relaxed">支持 Chrome 浏览器以及所有使用 Chromium 内核的浏览器（Edge、360极速浏览器等）。暂不支持 Safari 和 Firefox。</p>
+      </details>
+
+      <details class="bg-white rounded-xl border border-gray-200 p-6 group">
+        <summary class="font-semibold text-gray-800 cursor-pointer list-none flex justify-between items-center">
+          免费版能用多久？会过期吗？
+          <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+        </summary>
+        <p class="mt-4 text-gray-500 text-sm leading-relaxed">免费版永久有效，每日 10 次调用额度，每天 0 点自动重置。可以先免费用，满意再升级。</p>
+      </details>
+
+      <details class="bg-white rounded-xl border border-gray-200 p-6 group">
+        <summary class="font-semibold text-gray-800 cursor-pointer list-none flex justify-between items-center">
+          套餐是按月订阅还是永久买断？
+          <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+        </summary>
+        <p class="mt-4 text-gray-500 text-sm leading-relaxed">目前支持月卡购买（买一次用 30 天），暂不支持自动续费。到期后自动降级为免费版，可以再次购买激活码续期。</p>
+      </details>
+
+      <details class="bg-white rounded-xl border border-gray-200 p-6 group">
+        <summary class="font-semibold text-gray-800 cursor-pointer list-none flex justify-between items-center">
+          数据安全吗？聊天记录会被存储吗？
+          <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+        </summary>
+        <p class="mt-4 text-gray-500 text-sm leading-relaxed">我们仅将聊天文本和图片实时发送给 AI 进行分析，<strong>不存储聊天内容</strong>。调用记录仅记录次数用于用量统计，不保留对话原文。</p>
+      </details>
+
+      <details class="bg-white rounded-xl border border-gray-200 p-6 group">
+        <summary class="font-semibold text-gray-800 cursor-pointer list-none flex justify-between items-center">
+          购买后没收到激活码怎么办？
+          <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+        </summary>
+        <p class="mt-4 text-gray-500 text-sm leading-relaxed">可以在本页面"激活指南"区域的查询入口，输入你的邮箱或转账单号查询激活码。审核通常需要 24 小时内完成，激活码将发送至你填写的邮箱。如超过 24 小时仍未收到，请联系客服微信。</p>
+      </details>
+
+    </div>
+  </div>
+</section>
+
+<!-- ====== CTA ====== -->
+<section class="py-20 md:py-28">
+  <div class="max-w-3xl mx-auto px-4 text-center">
+    <h2 class="text-3xl md:text-4xl font-bold text-gray-900">准备好提升客服效率了吗？</h2>
+    <p class="mt-4 text-lg text-gray-500">免费安装，注册即用。10 次/天免费额度，零成本体验。</p>
+    <div class="mt-10">
+      <a href="https://chromewebstore.google.com" target="_blank" class="inline-block bg-brand-600 text-white px-10 py-4 rounded-xl text-lg font-semibold hover:bg-brand-700 shadow-lg shadow-brand-200 transition">
+        ⬇ 安装浏览器插件
+      </a>
+      <p class="mt-3 text-sm text-gray-400">Chrome 应用商店 · 安全可靠</p>
+    </div>
+  </div>
+</section>
+
+<!-- ====== 支付弹窗 ====== -->
+<div class="modal-overlay hidden" id="paymentModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h3 id="modalTitle">💰 购买套餐</h3>
+        <p class="text-sm text-gray-400 mt-1" id="modalSubtitle"></p>
+      </div>
+      <button class="modal-close" onclick="closePaymentModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- 支付方式标签 -->
+      <div class="pay-tabs">
+        <button class="pay-tab active" onclick="switchPayTab('alipay', this)">💚 支付宝</button>
+        <button class="pay-tab" onclick="switchPayTab('wechat', this)">💬 微信支付</button>
+      </div>
+
+      <!-- 二维码 -->
+      <div class="qr-container" id="qrContainer">
+        <img id="qrImage" src="" alt="收款码" />
+        <div class="qr-hint">
+          📱 请使用<strong id="payMethodLabel">支付宝</strong>扫码支付<br>
+          <span class="amount" id="payAmount">¥29.9</span>
+        </div>
+      </div>
+
+      <!-- 分割线 -->
+      <div class="divider">支付完成后，请填写以下信息</div>
+
+      <!-- 验证表单 -->
+      <form class="pay-form" id="payForm" onsubmit="submitPayment(event)">
+        <input type="hidden" id="payPlan" value="" />
+        <input type="hidden" id="payMethod" value="alipay" />
+
+        <div>
+          <label for="payEmail">📧 你的邮箱 <span style="color:#ef4444">*</span></label>
+          <input type="email" id="payEmail" placeholder="请输入邮箱，用于接收激活码" required maxlength="120" />
+          <p class="text-xs text-gray-400 mt-1">激活码将发送到此邮箱，请确保填写正确</p>
+        </div>
+
+        <div>
+          <label for="payTransNum">🔢 转账单号 <span style="color:#ef4444">*</span></label>
+          <input type="text" id="payTransNum" placeholder="请输入支付宝/微信转账单号（交易流水号）" required maxlength="64" />
+          <p class="text-xs text-gray-400 mt-1">在支付App的账单详情中可找到转账单号</p>
+        </div>
+
+        <div>
+          <label>📸 支付截图 <span style="color:#9ca3af;font-weight:400">（可选）</span></label>
+          <div class="screenshot-upload" id="screenshotUpload" onclick="document.getElementById('screenshotInput').click()">
+            <div id="screenshotPlaceholder">📷 点击上传支付成功截图<br><span style="font-size:11px">方便我们更快核实</span></div>
+            <img id="screenshotPreview" src="" alt="截图预览" style="display:none" />
+          </div>
+          <input type="file" id="screenshotInput" accept="image/*" style="display:none" onchange="handleScreenshot(event)" />
+        </div>
+
+        <button type="submit" class="btn-submit" id="paySubmitBtn">✅ 提交支付验证</button>
+        <div class="submit-status" id="submitStatus"></div>
+      </form>
+
+      <p class="text-xs text-gray-400 text-center mt-4">
+        ⚠️ 提交后我们将在 <strong>24 小时内</strong> 审核，激活码将发送到你的邮箱。<br>如有疑问请联系客服。
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Footer ====== -->
+<footer class="bg-gray-900 text-gray-400 py-12">
+  <div class="max-w-6xl mx-auto px-4 text-center text-sm space-y-2">
+    <p class="text-white font-semibold">🤖 电商AI客服助手</p>
+    <p>智能分析买家意图 · 秒级生成回复话术</p>
+    <div class="flex justify-center gap-6 mt-4">
+      <a href="#features" class="hover:text-white transition">功能</a>
+      <a href="#pricing" class="hover:text-white transition">套餐</a>
+      <a href="#activate" class="hover:text-white transition">激活码</a>
+      <a href="#faq" class="hover:text-white transition">常见问题</a>
+    </div>
+    <p class="mt-6 text-gray-600">© 2025 电商AI客服助手 · Powered by AI</p>
+  </div>
+</footer>
+
+<!-- ====== 支付弹窗 & 激活码查询脚本 ====== -->
+<script>
+const API_BASE = 'https://customerai-production.up.railway.app';
+
+// 支付宝 & 微信收款码（请替换为你自己的收款码图片链接）
+const QR_CODES = {
+  alipay: 'https://i.ibb.co/BVxFKs5z/40020-CE3180-CAD4037-F473-C0-EEDFAB1-D.jpg',
+  wechat: 'https://i.ibb.co/Fbq6Kydv/B7-D2-D0172065-F21875-B1-B28-AADD87395.jpg'
+};
+
+let screenshotBase64 = '';
+
+// ====== 支付弹窗 ======
+function openPaymentModal(plan, planName, price) {
+  document.getElementById('modalTitle').textContent = '💰 购买 ' + planName;
+  document.getElementById('modalSubtitle').textContent = '扫码支付 · 提交验证 · 邮件接收激活码';
+  document.getElementById('payAmount').textContent = '¥' + price.toFixed(1);
+  document.getElementById('payPlan').value = plan;
+  document.getElementById('payMethod').value = 'alipay';
+
+  // 重置表单
+  document.getElementById('payEmail').value = '';
+  document.getElementById('payTransNum').value = '';
+  document.getElementById('submitStatus').className = 'submit-status';
+  document.getElementById('submitStatus').textContent = '';
+  document.getElementById('paySubmitBtn').disabled = false;
+  clearScreenshot();
+
+  // 默认显示支付宝
+  document.querySelectorAll('.pay-tab').forEach(function(t, i) {
+    t.classList.toggle('active', i === 0);
+  });
+  updateQR('alipay');
+
+  document.getElementById('paymentModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closePaymentModal() {
+  document.getElementById('paymentModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+// 点击遮罩关闭
+document.getElementById('paymentModal').addEventListener('click', function(e) {
+  if (e.target === this) closePaymentModal();
+});
+
+// ESC 关闭
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && !document.getElementById('paymentModal').classList.contains('hidden')) {
+    closePaymentModal();
+  }
+});
+
+// ====== 支付方式切换 ======
+function switchPayTab(method, btn) {
+  document.querySelectorAll('.pay-tab').forEach(function(t) { t.classList.remove('active'); });
+  btn.classList.add('active');
+  document.getElementById('payMethod').value = method;
+  updateQR(method);
+}
+
+function updateQR(method) {
+  document.getElementById('qrImage').src = QR_CODES[method];
+  document.getElementById('payMethodLabel').textContent = method === 'alipay' ? '支付宝' : '微信';
+}
+
+// ====== 截图上传 ======
+function handleScreenshot(event) {
+  var file = event.target.files[0];
+  if (!file || !file.type.startsWith('image/')) return;
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    screenshotBase64 = e.target.result;
+    document.getElementById('screenshotPlaceholder').style.display = 'none';
+    var preview = document.getElementById('screenshotPreview');
+    preview.src = screenshotBase64;
+    preview.style.display = 'block';
+    document.getElementById('screenshotUpload').classList.add('has-image');
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearScreenshot() {
+  screenshotBase64 = '';
+  document.getElementById('screenshotPlaceholder').style.display = '';
+  document.getElementById('screenshotPreview').style.display = 'none';
+  document.getElementById('screenshotPreview').src = '';
+  document.getElementById('screenshotUpload').classList.remove('has-image');
+  document.getElementById('screenshotInput').value = '';
+}
+
+// ====== 提交支付验证 ======
+async function submitPayment(e) {
+  e.preventDefault();
+
+  var email = document.getElementById('payEmail').value.trim();
+  var transNum = document.getElementById('payTransNum').value.trim();
+  var plan = document.getElementById('payPlan').value;
+  var method = document.getElementById('payMethod').value;
+  var statusEl = document.getElementById('submitStatus');
+  var btn = document.getElementById('paySubmitBtn');
+
+  if (!email || !transNum) {
+    statusEl.className = 'submit-status error';
+    statusEl.textContent = '请填写邮箱和转账单号';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 提交中...';
+  statusEl.className = 'submit-status loading';
+  statusEl.textContent = '正在提交验证信息，请稍候...';
+
+  try {
+    var payload = {
+      plan: plan,
+      email: email,
+      transaction_number: transNum,
+      payment_method: method,
+      payment_screenshot: screenshotBase64 ? screenshotBase64 : ''
+    };
+
+    var res = await fetch(API_BASE + '/api/payment/submit-manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    var data = await res.json();
+
+    if (res.ok) {
+      statusEl.className = 'submit-status success';
+      statusEl.innerHTML = '✅ ' + data.message;
+      btn.textContent = '✅ 已提交';
+      // 3 秒后关闭弹窗
+      setTimeout(function() { closePaymentModal(); }, 5000);
+    } else {
+      throw new Error(data.detail || '提交失败');
+    }
+  } catch (err) {
+    statusEl.className = 'submit-status error';
+    statusEl.textContent = '❌ ' + (err.message || '网络错误，请稍后重试');
+    btn.disabled = false;
+    btn.textContent = '✅ 提交支付验证';
+  }
+}
+
+// ====== 激活码查询 ======
+async function lookupCode() {
+  var query = document.getElementById('orderIdInput').value.trim();
+  var resultEl = document.getElementById('lookupResult');
+  if (!query) {
+    resultEl.className = 'mt-3 text-sm text-red-600';
+    resultEl.textContent = '请输入邮箱或转账单号';
+    resultEl.classList.remove('hidden');
+    return;
+  }
+  resultEl.className = 'mt-3 text-sm text-gray-500';
+  resultEl.textContent = '查询中...';
+  resultEl.classList.remove('hidden');
+  try {
+    var res = await fetch(API_BASE + '/api/payment/lookup-submission?query=' + encodeURIComponent(query));
+    var data = await res.json();
+    if (data.found) {
+      if (data.status === 'verified' && data.code) {
+        resultEl.className = 'mt-3 text-sm text-green-600 font-semibold';
+        resultEl.textContent = '✅ 你的激活码：' + data.code + '（套餐：' + data.plan + '）';
+      } else if (data.status === 'verified') {
+        resultEl.className = 'mt-3 text-sm text-green-600';
+        resultEl.textContent = '✅ 已审核通过，激活码已发送至你的邮箱，请查收。';
+      } else if (data.status === 'pending') {
+        resultEl.className = 'mt-3 text-sm text-amber-600';
+        resultEl.textContent = '⏳ 你的支付验证正在审核中，请耐心等待（通常 24 小时内完成）。';
+      } else if (data.status === 'rejected') {
+        resultEl.className = 'mt-3 text-sm text-red-600';
+        resultEl.textContent = '❌ 验证未通过，请确认支付信息正确或联系客服。';
+      } else {
+        resultEl.className = 'mt-3 text-sm text-amber-600';
+        resultEl.textContent = '未找到对应的提交记录，请确认输入的信息正确。';
+      }
+    } else {
+      resultEl.className = 'mt-3 text-sm text-amber-600';
+      resultEl.textContent = '未找到对应的提交记录，请确认输入的信息正确或先提交支付验证。';
+    }
+  } catch (e) {
+    resultEl.className = 'mt-3 text-sm text-red-600';
+    resultEl.textContent = '查询失败，请稍后重试。';
+  }
+}
+</script>
+
+</body>
+</html>
