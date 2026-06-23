@@ -68,7 +68,13 @@ class RedeemRequest(BaseModel):
 @app.post("/api/redeem")
 async def redeem_code(req: RedeemRequest, user=Depends(get_current_user)):
     # 查询激活码
-    res = supabase.table("activation_codes").select("*").eq("code", req.code).execute()
+    print(f"Looking for code: {req.code}")  # 打印激活码
+    try:
+        res = supabase.table("activation_codes").select("*").eq("code", req.code).execute()
+        print(f"Query result: {res.data}")  # 打印查询结果
+    except Exception as e:
+        print(f"Database query error: {e}")
+        raise HTTPException(500, "数据库查询失败")
     if not res.data:
         raise HTTPException(404, "激活码不存在")
     code_data = res.data[0]
