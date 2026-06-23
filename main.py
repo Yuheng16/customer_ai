@@ -1,7 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from models import AnalyzeRequest, AnalyzeResponse, ReplyOption
+from models import AnalyzeRequest, AnalyzeResponse, ReplyOption, OcrRequest, OcrResponse
 from service import analyze_order
+from ocr_service import ocr_extract_fields
 from database import supabase
 from auth import get_current_user, check_usage
 from pydantic import BaseModel
@@ -115,6 +116,38 @@ async def analyze(
         practical_point=result.get("practical_point", ""),
         solution=result.get("solution", ""),
         reply_options=[ReplyOption(**opt) for opt in result.get("reply_options", [])]
+    )
+
+
+# ====== OCR 截图识别接口 ======
+
+@app.post("/api/ocr", response_model=OcrResponse)
+async def ocr_extract(
+    req: OcrRequest,
+    user=Depends(get_current_user),
+    usage=Depends(check_usage)
+):
+    """OCR 识别：从千牛退款详情页截图中提取订单结构化字段"""
+    try:
+        result = await ocr_extract_fields(req.image_base64)
+    except Exception as e:
+        print(f"OCR error: {e}")
+        raise HTTPException(500, f"OCR 识别失败: {str(e)}")
+
+    # 记录本次调用
+    supabase.table("user_usage").insert({
+        "user_id": usage["user_id"]
+    }).execute()
+
+    return OcrResponse(
+        order_number=result.get("order_number", ""),
+        product_name=result.get("product_name", ""),
+        refund_amount=result.get("refund_amount", ""),
+        refund_reason=result.get("refund_reason", ""),
+        application_time=result.get("application_time", ""),
+        logistics_number=result.get("logistics_number", ""),
+        logistics_status=result.get("logistics_status", ""),
+        raw_text=result.get("raw_text", ""),
     )
 
 
