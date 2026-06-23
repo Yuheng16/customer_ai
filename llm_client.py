@@ -9,6 +9,11 @@ load_dotenv()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 
+# deepseek-chat 是纯文本模型，不支持图片多模态
+# 如需视觉分析，改为 deepseek-vl2 或其他视觉模型
+VISION_MODEL = os.getenv("VISION_MODEL", None)  # 设为 "deepseek-vl2" 启用视觉
+TEXT_MODEL = "deepseek-chat"
+
 
 async def call_deepseek(
     prompt: str,
@@ -18,25 +23,35 @@ async def call_deepseek(
     max_tokens: int = 1024
 ) -> str:
     """
-    调用 DeepSeek API（支持纯文本和多模态图片分析）
+    调用 DeepSeek API。有图片时优先用视觉模型，否则用纯文本模型。
     """
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    if image_urls and len(image_urls) > 0:
+    has_images = image_urls and len(image_urls) > 0
+    use_vision = has_images and VISION_MODEL
+
+    if use_vision:
+        # 视觉模型：多模态格式
         content_parts = [{"type": "text", "text": prompt}]
         for url in image_urls:
+            # 跳过过大的 base64（>500KB），避免 400
+            if url.startswith("data:") and len(url) > 500_000:
+                continue
             content_parts.append({
                 "type": "image_url",
                 "image_url": {"url": url}
             })
         user_message = {"role": "user", "content": content_parts}
-        model = "deepseek-chat"
+        model = VISION_MODEL
     else:
+        # 纯文本模型：图片信息拼入文本
+        if has_images:
+            prompt += f"\n\n📷 买家发送了 {len(image_urls)} 张图片。请根据文字内容分析，并假设你能看到这些图片来给出建议。"
         user_message = {"role": "user", "content": prompt}
-        model = "deepseek-chat"
+        model = TEXT_MODEL
 
     payload = {
         "model": model,
@@ -54,6 +69,13 @@ async def call_deepseek(
             json=payload,
             headers=headers
         )
+
+        # 400 错误时打印详细信息用于调试
+        if resp.status_code == 400:
+            body = resp.text
+            print(f"DeepSeek 400 错误: {body[:500]}")
+            raise Exception(f"DeepSeek API 400: {body[:300]}")
+
         resp.raise_for_status()
         data = resp.json()
         return data["choices"][0]["message"]["content"]
@@ -62,23 +84,14 @@ async def call_deepseek(
 def parse_ai_response(raw_text: str) -> dict:
     """
     解析 AI 返回的 JSON 结果。
-    预期格式：
-    {
-      "buyer_intent": "...",
-      "buyer_emotion": "...",
-      "solution": "...",
-      "reply_options": [{"style": "...", "text": "..."}, ...]
-    }
     """
     parsed = None
 
-    # 1. 直接解析 JSON
     try:
         parsed = json.loads(raw_text)
     except (json.JSONDecodeError, ValueError):
         pass
 
-    # 2. 提取 JSON 代码块
     if parsed is None:
         m = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', raw_text, re.DOTALL)
         if m:
@@ -87,7 +100,6 @@ def parse_ai_response(raw_text: str) -> dict:
             except (json.JSONDecodeError, ValueError):
                 pass
 
-    # 3. 如果解析成功，提取字段
     if isinstance(parsed, dict):
         reply_options = parsed.get("reply_options", [])
         if isinstance(reply_options, list):
@@ -108,7 +120,6 @@ def parse_ai_response(raw_text: str) -> dict:
             "reply_options": reply_options
         }
 
-    # 4. 兜底
     return {
         "buyer_intent": "",
         "buyer_emotion": "",
