@@ -35,7 +35,7 @@ async def check_usage(user=Depends(get_current_user)):
     # 检查订阅是否过期
     if profile["subscription_expiry"]:
         expiry = datetime.fromisoformat(profile["subscription_expiry"].replace("Z","+00:00"))
-        if expiry < datetime.utcnow():
+        if expiry < datetime.now(timezone.utc):
             # 过期降级为 free
             supabase.table("profiles").update({"subscription_tier": "free", "subscription_expiry": None}).eq("id", user.id).execute()
             profile["subscription_tier"] = "free"
